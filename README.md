@@ -32,8 +32,8 @@ Constraint propagation is then a reduction over the constraint propagation list,
 the board mutably or returning nil if a constraint is broken.
 
 
-The intention was to talk about how to move the algorithms more towards a numeric
-computing solution.  My hope is this code isn't too terse or hard to read.
+The intention was play with this problem from a more numeric perspective.  My hope
+is this code isn't too terse or hard to read.
 
 ## Usage
 
