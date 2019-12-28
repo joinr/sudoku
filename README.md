@@ -2,8 +2,25 @@
 
 A slightly different take on Dr. Norvig's Sudoku puzzle solver -
 
-I just use an object array as the board and pregenerate the sets of potentially
-affected indexes for any given move.
+
+## Algorithm Outline
+
+
+I represent the board as an y,x 2d indexed object array of one of three things:
+* `nil` - broken constraint
+* `number` - chosen value
+* `set` - potential values
+
+
+I precalculate all of the potential indexes that can be effected by any given move.
+
+
+When choosing values, I iterate over the affected list of indexes which must include
+the desired index to chose and mutably update an object array keeping track of if
+the result is valid and which entries need a second pass for constraint propagation.
+
+Constraint propagation is then a reduction over the constraint propagation list, updating
+the board mutably or returning nil if a constraint is broken.
 
 ## Usage
 
@@ -37,6 +54,9 @@ Solving really hard one...please wait
 | 5 8 7 | 6 4 1 | 9 3 2 |
 -------------------------
 ```
+
+
+
 
 ## License
 
