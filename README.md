@@ -2,9 +2,8 @@
 
 A slightly different take on Dr. Norvig's Sudoku puzzle solver -
 
-I just use an object array as the board and generate the sets of potentially
-affected indexes for any given move.  This gets me decent performance but I
-was unable to beat the python implementation by enough to really care.
+I just use an object array as the board and pregenerate the sets of potentially
+affected indexes for any given move.
 
 ## Usage
 
