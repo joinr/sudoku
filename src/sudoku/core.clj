@@ -20,6 +20,9 @@
 (set! *unchecked-math* :warn-on-boxed)
 
 (defn board->str
+  "Rendering the board.  Convert board to strings, keep
+  track of the longest column and render board as a row-major
+  2d plane."
   [board display-sets?]
   (let [board (map (fn [item]
                      (cond
@@ -82,14 +85,15 @@
     retval))
 
 
-(defn board->elem-seq
-  "To convert to board to a sequence of its elements the fastest way is just to
-  make a reader out of it.  If you naively map over a board you will get
+(defn tensor->elem-seq
+  "To convert to tensor to a sequence of its elements the fastest way is just to
+  make a reader out of it.  If you naively map over a 2d tensor you will get
   a sequence of rows."
-  [board]
-  (dtype/->reader board))
+  [tens]
+  (dtype/->reader tens))
 
 
+;;Computing which indexes are affected by any move
 (defn row-indexes
   [y]
   (dtt/select board-indexes y :all))
@@ -123,14 +127,15 @@
   (memoize
    (fn [y x]
      (let [row-indexes (->> (row-indexes y)
-                            (board->elem-seq)
+                            (tensor->elem-seq)
                             set)
            col-indexes (->> (column-indexes x)
-                            (board->elem-seq)
+                            (tensor->elem-seq)
                             set)
            unit-indexes (->> (unit-indexes y x)
-                             (board->elem-seq)
+                             (tensor->elem-seq)
                              set)]
+       ;;We take advantage of the fact that these are long arrays
        (long-array
         (c-set/union row-indexes col-indexes unit-indexes))))))
 
@@ -148,20 +153,28 @@
         ;;These could be precalculated
         ^longs affected-indexes (get-affected-indexes y x)
         affected-idx-count (alength affected-indexes)
+
+        ;;These two variables, along with the board are mutated by the
+        ;;iteration over the accected indexes
         propagate-constraints (java.util.ArrayList.)
         valid-board?
-        (loop [affect-idx 0
+        (loop [affected-index-idx 0
                valid-board? true]
+          ;;Operating in the index space of the affected indexes list, loop over
+          ;;the affected indexes updating the board while keeping track of
+          ;;if the result is valid and which indexes need constraint propagation.
           (if (and valid-board?
-                   (< affect-idx affected-idx-count))
-            (let [target-idx (aget affected-indexes affect-idx)
+                   (< affected-index-idx affected-idx-count))
+            (let [target-idx (aget affected-indexes affected-index-idx)
                   entry (aget board target-idx)
                   valid-board?
                   (cond
+                    ;;chosen index
                     (= target-idx item-idx)
                     (do
                       (aset board target-idx (Long. val))
                       true)
+                    ;;An integer at a non-chosen index
                     (number? entry)
                     ;;If this has already been chosen
                     (if (= (long entry) val)
@@ -170,7 +183,9 @@
                         (aset board target-idx nil)
                         false)
                       true)
+                    ;;The set of possible choices
                     (set? entry)
+                    ;;disj means remove from set
                     (let [retval (disj entry val)]
                       (if-not (empty? retval)
                         (do
@@ -184,12 +199,12 @@
                     :else
                     (throw (Exception. (str "Logic error: "
                                             entry " " val))))]
-              (recur (inc affect-idx) valid-board?))
+              (recur (inc affected-index-idx) valid-board?))
             valid-board?))]
 
     ;;When we have a valid board.
     (if valid-board?
-      ;;propogate the constraint that sets with 1 item get 'chosen'
+      ;;propagate the constraint that sets with 1 item get 'chosen'
       (reduce (fn [board chosen-one-idx]
                 ;;One of these may cause a constraint violation
                 (when board
@@ -215,6 +230,7 @@
 
 
 (defn parse-board
+  ""
   [str-board]
   (let [ascii-zero (Character/getNumericValue \0)
         meaningful-set (set "0123456789.")
@@ -235,7 +251,7 @@
 
 (defn solved?
   [board]
-  (every? number? (board->elem-seq board)))
+  (every? number? (tensor->elem-seq board)))
 
 
 (defn- minimal-len-set

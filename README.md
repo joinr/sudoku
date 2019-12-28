@@ -1,15 +1,24 @@
 # sudoku
 
-A slightly different take on Dr. Norvig's Sudoku puzzle solver -
+A slightly different take on Dr. Norvig's 
+[Sudoku puzzle solver](https://norvig.com/sudoku.html)
 
 
 ## Algorithm Outline
+
+Starting from Norvig's algorithm, I essentially do the same thing.  I mutably update
+a board on each choice keeping track of the possible moves to other locations and
+which parts of the board have a chosen number.
 
 
 I represent the board as an y,x 2d indexed object array of one of three things:
 * `nil` - broken constraint
 * `number` - chosen value
 * `set` - potential values
+
+
+
+I also create an index tensor to pre-calculate the sets of affected indexes.
 
 
 I precalculate all of the potential indexes that can be effected by any given move.
@@ -21,6 +30,10 @@ the result is valid and which entries need a second pass for constraint propagat
 
 Constraint propagation is then a reduction over the constraint propagation list, updating
 the board mutably or returning nil if a constraint is broken.
+
+
+The intention was to talk about how to move the algorithms more towards a numeric
+computing solution.  My hope is this code isn't too terse or hard to read.
 
 ## Usage
 
