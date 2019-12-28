@@ -131,12 +131,9 @@
         (c-set/union row-indexes col-indexes unit-indexes))))))
 
 
-(def ^:dynamic *error-on-invalid* false)
 
-
-
-(defn choose!
-  "Modify board with choice"
+(defn- update-constraint!
+  "Returns tuple of [board constrain-propagation-list]"
   [board [y x] val]
   (let [^"[Ljava.lang.Object;" board board
         val (long val)
@@ -147,71 +144,80 @@
 
         ;;These two variables, along with the board are mutated by the
         ;;iteration over the accected indexes
-        propagate-constraints (java.util.ArrayList.)
-        valid-board?
-        (loop [affected-index-idx 0
-               valid-board? true]
-          ;;Operating in the index space of the affected indexes list, loop over
-          ;;the affected indexes updating the board while keeping track of
-          ;;if the result is valid and which indexes need constraint propagation.
-          (if (and valid-board?
-                   (< affected-index-idx affected-idx-count))
-            (let [target-idx (aget affected-indexes affected-index-idx)
-                  entry (aget board target-idx)
-                  valid-board?
-                  (cond
-                    ;;chosen index
-                    (= target-idx item-idx)
+        propagate-constraints (java.util.ArrayList.)]
+    (loop [affected-index-idx 0
+           valid-board? true]
+      ;;Operating in the index space of the affected indexes list, loop over
+      ;;the affected indexes updating the board while keeping track of
+      ;;if the result is valid and which indexes need constraint propagation.
+      (if (and valid-board?
+               (< affected-index-idx affected-idx-count))
+        (let [target-idx (aget affected-indexes affected-index-idx)
+              entry (aget board target-idx)
+              valid-board?
+              (cond
+                ;;chosen index
+                (= target-idx item-idx)
+                (do
+                  (aset board target-idx (Long. val))
+                  true)
+                ;;An integer at a non-chosen index
+                (number? entry)
+                ;;If this has already been chosen
+                (if (= (long entry) val)
+                  ;;Record the invalid position
+                  (do
+                    (aset board target-idx nil)
+                    false)
+                  true)
+                ;;The set of possible choices
+                (set? entry)
+                ;;disj means remove from set
+                (let [retval (disj entry val)]
+                  (if-not (empty? retval)
                     (do
-                      (aset board target-idx (Long. val))
+                      (aset board target-idx retval)
+                      (when (= 1 (count retval))
+                        (.add propagate-constraints target-idx))
                       true)
-                    ;;An integer at a non-chosen index
-                    (number? entry)
-                    ;;If this has already been chosen
-                    (if (= (long entry) val)
-                      ;;Record the invalid position
-                      (do
-                        (aset board target-idx nil)
-                        false)
-                      true)
-                    ;;The set of possible choices
-                    (set? entry)
-                    ;;disj means remove from set
-                    (let [retval (disj entry val)]
-                      (if-not (empty? retval)
-                        (do
-                          (aset board target-idx retval)
-                          (when (= 1 (count retval))
-                            (.add propagate-constraints target-idx))
-                          true)
-                        (do
-                          (aset board target-idx nil)
-                          false)))
-                    :else
-                    (throw (Exception. (str "Logic error: "
-                                            entry " " val))))]
-              (recur (inc affected-index-idx) valid-board?))
-            valid-board?))]
+                    (do
+                      (aset board target-idx nil)
+                      false)))
+                :else
+                (throw (Exception. (str "Logic error: "
+                                        entry " " val))))]
+          (recur (inc affected-index-idx) valid-board?))
+        ;;False branch
+        (when valid-board?
+          [board propagate-constraints])))))
 
-    ;;When we have a valid board.
-    (if valid-board?
-      ;;propagate the constraint that sets with 1 item get 'chosen'
-      (reduce (fn [board chosen-one-idx]
+
+
+(def ^:dynamic *error-on-invalid* false)
+
+
+(defn choose!
+  "Modify board with choice"
+  [board yx-tuple val]
+  (if-let [updated-info (update-constraint! board yx-tuple val)]
+    (let [[board propagate-constraints] updated-info]
+      ;;When we have a valid board.
+      (reduce (fn [^"[Ljava.lang.Object;" board chosen-one-idx]
                 ;;One of these may cause a constraint violation
                 (when board
                   ;;This may have been chosen as a result of a previous step
-                  (let [new-value (aget ^"[Ljava.lang.Object;" board (int chosen-one-idx))]
+                  (let [new-value (aget board (int chosen-one-idx))]
                     (if (set? new-value)
                       (choose! board
-                              (index->yx chosen-one-idx)
-                              (first new-value))
+                               (index->yx chosen-one-idx)
+                               (first new-value))
                       board))))
               board
-              propagate-constraints)
-      (when *error-on-invalid*
-        (throw (Exception. (format "Failed constraint:
+              propagate-constraints))
+    (when *error-on-invalid*
+      (throw (Exception. (format "Failed constraint:
 %s"
-                                   (board->str board true))))))))
+                                 (board->str board true)))))))
 
 
 (def grid1 "003020600900305001001806400008102900700000008006708200002609500800203009005010300")
