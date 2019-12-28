@@ -1,9 +1,11 @@
 (defproject sudoku "0.1.0-SNAPSHOT"
-  :description "FIXME: write description"
-  :url "http://example.com/FIXME"
-  :license {:name "EPL-2.0 OR GPL-2.0-or-later WITH Classpath-exception-2.0"
+  :description "Exploration of Dr. Norvig's sudoku solver"
+  :url "https://github.com/cnuernber/sudoku"
+  :license {:name "EPL-2.0"
             :url "https://www.eclipse.org/legal/epl-2.0/"}
   :dependencies [[org.clojure/clojure "1.10.1"]
-                 [cnuernber/libpython-clj "1.30-SNAPSHOT"]]
+                 [techascent/tech.datatype "4.66"]]
   :repl-options {:init-ns sudoku.core}
-  :main sudoku.core)
+  :main sudoku.core
+  :profiles {:uberjar {:aot [sudoku.core]
+                       :uberjar-name "sudoku.jar"}})
