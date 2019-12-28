@@ -1,18 +1,9 @@
 (ns sudoku.core
   (:require [tech.v2.tensor :as dtt]
-            [tech.v2.tensor.impl :as dtt-impl]
-            [tech.v2.tensor.dimensions :as dtt-dims]
-            [tech.v2.tensor.typecast :as dtt-typecast]
             [tech.v2.datatype :as dtype]
-            [tech.v2.datatype.protocols :as dtype-proto]
-            [tech.v2.datatype.typecast :as typecast]
-            [tech.v2.datatype.unary-op :as unary-op]
-            [tech.v2.datatype.functional :as dfn]
             [clojure.set :as c-set]
             [clojure.java.io :as io]
             [clojure.string :as s])
-  (:import [tech.v2.datatype ObjectReader]
-           [tech.v2.tensor LongTensorReader])
   (:gen-class))
 
 
