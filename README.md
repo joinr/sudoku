@@ -13,7 +13,6 @@ which parts of the board have a chosen number.
 
 I represent the board as an y,x 2d indexed object array of one of three things:
 * `nil` - broken constraint
-* `number` - chosen value
 * `set` - potential values
 
 
@@ -23,42 +22,36 @@ decide inclusion to the set.  This works assuming you only want numbers 0-63 in 
 set which is plenty for sudoku.
 
 
-
 I also create an index tensor to pre-calculate the sets of affected indexes.
 
 
-I precalculate all of the potential indexes that can be effected by any given move.
+I precalculate all of the potential indexes that can be effected by any given move
+similarly to the original impl.
 
-
-When choosing values, I iterate over the affected list of indexes which must include
-the desired index to chose and mutably update an object array keeping track of if
-the result is valid and which entries need a second pass for constraint propagation.
-
-Constraint propagation is then a reduction over the constraint propagation list, updating
-the board mutably or returning nil if a constraint is broken.
-
-
-The intention was play with this problem from a more numeric perspective.  My hope
-is this code isn't too terse or hard to read.
+The intention was play with this problem from clojure potentially attempting a more
+numeric conversion.  Hopefully this code isn't to terse or hard.
 
 ## Usage
 
 ```console
-lein uberjar && java -jar target/sudoku.jar
-
+chrisn@chrisn-lt2:~/dev/cnuernber/sudoku$ lein uberjar && java -jar target/sudoku.jar
+Compiling sudoku.core
+Compiling sudoku.core
+Created /home/chrisn/dev/cnuernber/sudoku/target/sudoku-0.1.0-SNAPSHOT.jar
+Created /home/chrisn/dev/cnuernber/sudoku/target/sudoku.jar
 warming up
 solved 50 puzzles
 solving easy group
 solved 50 puzzles
-"Elapsed time: 64.008797 msecs"
+"Elapsed time: 140.796527 msecs"
 solving top95 group
 solved 95 puzzles
-"Elapsed time: 4475.410177 msecs"
+"Elapsed time: 876.235254 msecs"
 solving hardest group
 solved 11 puzzles
-"Elapsed time: 23.55941 msecs"
+"Elapsed time: 41.039653 msecs"
 Solving really hard one...please wait
-"Elapsed time: 20667.936802 msecs"
+"Elapsed time: 38865.973044 msecs"
 -------------------------
 | 4 3 8 | 7 9 6 | 2 1 5 |
 | 6 5 9 | 1 3 2 | 4 7 8 |
