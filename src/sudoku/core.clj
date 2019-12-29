@@ -12,6 +12,16 @@
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* :warn-on-boxed)
 
+(definline fast-first [x]
+  `(.first ^clojure.lang.ISeq (seq ~x)))
+
+(definline fast-count [s]
+  (let [s (with-meta s {:tag 'clojure.lang.Counted})]
+    `(.count  ~s)))
+
+(definline fast-nth [s idx]
+  (let [s (with-meta s {:tag 'clojure.lang.Indexed})]
+    `(.nth ~s ~idx)))
 
 (defn board->str
   "Rendering the board.  Convert board to strings, keep
@@ -116,8 +126,26 @@
   (+ (* 9 y) x))
 
 
+;;4x faster than clojure.core/memoize...
+;;we can do better with a macro, but I haven't sussed it out.
+;;This is a much as we probably need for now though, meh.
+(defn memo-2 [f]
+  (let [xs (java.util.concurrent.ConcurrentHashMap.)]
+    (fn [x y]
+      (if-let [^java.util.concurrent.ConcurrentHashMap ys (.get xs x)]
+        (if-let [res (.get ys y)]
+          res
+          (let [res (f x y)]
+            (do (.putIfAbsent ys y res)
+                res)))
+        (let [res     (f x y)
+              ys    (doto (java.util.concurrent.ConcurrentHashMap.)
+                      (.putIfAbsent y res))
+              _     (.putIfAbsent xs x ys)]
+          res)))))
+
 (def get-affected-indexes
-  (memoize
+  (memo-2
    (fn [y x]
      (let [row-indexes (->> (row-indexes y)
                             (tensor->elem-seq)
@@ -131,8 +159,6 @@
        ;;We take advantage of the fact that these are long arrays
        (long-array
         (c-set/union row-indexes col-indexes unit-indexes))))))
-
-
 
 (defn- update-constraint!
   "Returns tuple of [board constrain-propagation-list]"
@@ -175,8 +201,8 @@
                 ;;The set of possible choices
                 (set? entry)
                 ;;disj means remove from set
-                (let [retval (disj entry val)
-                      n-vals (count retval)]
+                (let [retval (.disjoin ^clojure.lang.IPersistentSet entry val)
+                      n-vals (fast-count retval)]
                   ;;empty forces a call to seq which is expensive compared to checking
                   ;;if a long value is 0 (implementation of longset).
                   (if-not (= 0 n-vals)
@@ -215,7 +241,7 @@
                     (if (set? new-value)
                       (choose! board
                                (index->yx chosen-one-idx)
-                               (first new-value))
+                               (fast-first  new-value))
                       board))))
               board
               propagate-constraints))
@@ -256,6 +282,7 @@
   (every? number? (tensor->elem-seq board)))
 
 
+
 (defn- minimal-len-set
   [board]
   (let [^"[Ljava.lang.Object;" board board
@@ -267,25 +294,26 @@
         (let [entry (aget board elem-idx)
               retval (if (and (set? entry)
                               (or (= min-count -1)
-                                  (< (count entry) min-count)))
+                                  (< (fast-count  entry) min-count)))
                        [elem-idx entry]
                        retval)
-              min-count (long (if retval (count (second retval)) min-count))]
+              min-count (long (if retval (fast-count (fast-nth retval 1)) min-count))]
           (recur (inc elem-idx) retval min-count))
         retval))))
-
 
 (defn search
   [board]
   (let [[item-idx set-items :as min-elem] (minimal-len-set board)]
     (if min-elem
-      (->> set-items
-           (map #(when-let [board (choose! (duplicate-board board)
-                                           (index->yx item-idx)
-                                           %)]
-                   (search board)))
-           (remove nil?)
-           first)
+      (transduce (comp (map #(when-let [board (choose! (duplicate-board board)
+                                                       (index->yx item-idx)
+                                                       %)]
+                               (search board)))
+                       (remove nil?)
+                       (take 1))
+                 (completing (fn [acc x] (reduced x)))
+                 nil
+                 set-items)
       ;;If there are no sets left then the board is solved.
       board)))
 
@@ -315,7 +343,7 @@
   :ok)
 
 
-(defn -main
+(defn main-test
   [& args]
   (println "warming up")
   (solve-all easy-group)
@@ -327,5 +355,9 @@
   (time (solve-all hardest-group))
   (println "Solving really hard one...please wait")
   (let [results (time (solve hard1))]
-    (display-board results))
+    (display-board results)))
+
+(defn -main
+  [& args]
+  (main-test)
   (shutdown-agents))
