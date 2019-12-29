@@ -121,6 +121,8 @@ def search(values):
         return values ## Solved!
     ## Chose the unfilled square s with the fewest possibilities
     n,s = min((len(values[s]), s) for s in squares if len(values[s]) > 1)
+    display(values)
+    print("n: " + str(n) + " s: " + str(values[s]) )
     for d in values[s]:
         result = search(assign(values.copy(), s, d))
         if result: return result
@@ -136,7 +138,7 @@ def solve_all(grids, name=''):
     if N > 1:
         print("Solved %d of %d %s puzzles (avg %.2f secs (%d Hz), max %.2f secs)." % (
             sum(results), N, name, sum(times)/N, N/sum(times), max(times)))
-            
+
 def time_solve(grid):
     start = time.clock()
     values = solve(grid)
@@ -152,10 +154,11 @@ def solved(values):
 grid1  = '003020600900305001001806400008102900700000008006708200002609500800203009005010300'
 grid2  = '4.....8.5.3..........7......2.....6.....8.4......1.......6.3.7.5..2.....1.4......'
 hard1  = '.....6....59.....82....8....45........3........6..3.54...325..6..................'
-    
+
 if __name__ == '__main__':
     test()
     solve_all(open("sudoku-easy50.txt"), "easy")
     solve_all(open("sudoku-top95.txt"), "hard")
     solve_all(open("sudoku-hardest.txt"), "hardest")
-    
+    time,result = time_solve(hard1)
+    print("Solved hard1 in %.2f secs" % time)

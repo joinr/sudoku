@@ -4,7 +4,7 @@
             [clojure.set :as c-set]
             [clojure.java.io :as io]
             [clojure.string :as s]
-            [sudoku.longset :refer [longset]])
+            [sudoku.longset :refer [longset longset?]])
   (:import [clojure.lang IPersistentCollection])
   (:gen-class))
 
@@ -25,8 +25,12 @@
                        (nil? item)
                        " -"
                        :else
-                       (if display-sets?
+                       (cond
+                         (= 1 (count item))
+                         (str " " (first item))
+                         display-sets?
                          (apply str " {" (concat item ["}"]))
+                         :else
                          " .")))
                    board)
         column-len (long (apply max (map count board)))
@@ -106,18 +110,57 @@
                 (range x-unit (+ x-unit 3)))))
 
 
-(defn index->yx
-  [^long elem-idx]
-  [(quot elem-idx 9) (rem elem-idx 9)])
+(definline fast-first [x]
+  `(.first ^clojure.lang.ISeq (seq ~x)))
+
+(definline fast-count [s]
+  (let [s (with-meta s {:tag 'clojure.lang.Counted})]
+    `(.count  ~s)))
+
+(definline fast-nth [s idx]
+  (let [s (with-meta s {:tag 'clojure.lang.Indexed})]
+    `(.nth ~s ~idx)))
+
+(definline fast-set-disj [s val]
+  (let [s (with-meta s {:tag 'clojure.lang.IPersistentSet})]
+    `(.disjoin ~s ~val)))
 
 
-(defn yx->index
-  ^long [^long y ^long x]
-  (+ (* 9 y) x))
+(definline index->yx
+  [elem-idx]
+  `(let [elem-idx# (long ~elem-idx)]
+     [(quot elem-idx# 9) (rem elem-idx# 9)]))
+
+
+(definline yx->index
+  [items]
+  `(let [^java.util.List items# ~items
+         y# (long (.get items# 0))
+         x# (long (.get items# 1))]
+     (+ (* 9 y#) x#)))
+
+
+;;4x faster than clojure.core/memoize...
+;;we can do better with a macro, but I haven't sussed it out.
+;;This is a much as we probably need for now though, meh.
+(defn memo-2 [f]
+  (let [xs (java.util.concurrent.ConcurrentHashMap.)]
+    (fn [x y]
+      (if-let [^java.util.concurrent.ConcurrentHashMap ys (.get xs x)]
+        (if-let [res (.get ys y)]
+          res
+          (let [res (f x y)]
+            (do (.putIfAbsent ys y res)
+                res)))
+        (let [res     (f x y)
+              ys    (doto (java.util.concurrent.ConcurrentHashMap.)
+                      (.putIfAbsent y res))
+              _     (.putIfAbsent xs x ys)]
+          res)))))
 
 
 (def get-affected-indexes
-  (memoize
+  (memo-2
    (fn [y x]
      (let [row-indexes (->> (row-indexes y)
                             (tensor->elem-seq)
@@ -127,102 +170,94 @@
                             set)
            unit-indexes (->> (unit-indexes y x)
                              (tensor->elem-seq)
-                             set)]
+                             set)
+           elem-idx (yx->index [y x])]
        ;;We take advantage of the fact that these are long arrays
-       (long-array
-        (c-set/union row-indexes col-indexes unit-indexes))))))
+       {:units [row-indexes
+                col-indexes
+                unit-indexes]
+        :affected-indexes
+        (long-array
+         (c-set/union row-indexes col-indexes unit-indexes))
+        :peers
+        (long-array (fast-set-disj (c-set/union row-indexes
+                                                col-indexes
+                                                unit-indexes)
+                                   elem-idx))}))))
 
 
-
-(defn- update-constraint!
-  "Returns tuple of [board constrain-propagation-list]"
-  [board [y x] val]
-  (let [^"[Ljava.lang.Object;" board board
-        val (long val)
-        item-idx (yx->index y x)
-        ;;These could be precalculated
-        ^longs affected-indexes (get-affected-indexes y x)
-        affected-idx-count (alength affected-indexes)
-
-        ;;These two variables, along with the board are mutated by the
-        ;;iteration over the accected indexes
-        propagate-constraints (java.util.ArrayList.)]
-    (loop [affected-index-idx 0
-           valid-board? true]
-      ;;Operating in the index space of the affected indexes list, loop over
-      ;;the affected indexes updating the board while keeping track of
-      ;;if the result is valid and which indexes need constraint propagation.
-      (if (and valid-board?
-               (< affected-index-idx affected-idx-count))
-        (let [target-idx (aget affected-indexes affected-index-idx)
-              entry (aget board target-idx)
-              valid-board?
-              (cond
-                ;;chosen index
-                (= target-idx item-idx)
-                (do
-                  (aset board target-idx (Long. val))
-                  true)
-                ;;An integer at a non-chosen index
-                (number? entry)
-                ;;If this has already been chosen
-                (if (= (long entry) val)
-                  ;;Record the invalid position
-                  (do
-                    (aset board target-idx nil)
-                    false)
-                  true)
-                ;;The set of possible choices
-                (set? entry)
-                ;;disj means remove from set
-                (let [retval (disj entry val)
-                      n-vals (count retval)]
-                  ;;empty forces a call to seq which is expensive compared to checking
-                  ;;if a long value is 0 (implementation of longset).
-                  (if-not (= 0 n-vals)
-                    (do
-                      (aset board target-idx retval)
-                      (when (= 1 n-vals)
-                        (.add propagate-constraints target-idx))
-                      true)
-                    (do
-                      (aset board target-idx nil)
-                      false)))
-                :else
-                (throw (Exception. (str "Logic error: "
-                                        entry " " val))))]
-          (recur (inc affected-index-idx) valid-board?))
-        ;;False branch
-        (when valid-board?
-          [board propagate-constraints])))))
+(defn peers
+  [[y x :as yx-tuple]]
+  (:peers (get-affected-indexes y x)))
 
 
+(defn units
+  [[y x :as yx-tuple]]
+  (:units (get-affected-indexes y x)))
 
-(def ^:dynamic *error-on-invalid* false)
+
+(defn- entry-set-contains-value?
+  [^"[Ljava.lang.Object;" board ^long value elem-idx]
+  (let [entry (aget board elem-idx)]
+    (when (set? entry)
+      (contains? entry value))))
+
+(defn- value-possible-in-unit?
+  [^"[Ljava.lang.Object;" board ^long value unit-set]
+  (some #(entry-set-contains-value? board value %) unit-set))
+
+(defn- places-for-value
+  [^"[Ljava.lang.Object;" board ^long value unit]
+  (filterv #(let [entry (aget board (int %))]
+              (and (set? entry)
+                   (contains? entry value)))
+           unit))
+
+(declare eliminate!)
+
+(defn assign!
+  "Eliminate all the other values (except d) from values[s] and propagate.
+    Return values, except return False if a contradiction is detected."
+  [^"[Ljava.lang.Object;" board yx-tuple value]
+  (let [other-values (fast-set-disj (aget board (yx->index yx-tuple)) value)]
+    (when (every? #(eliminate! board yx-tuple %) other-values)
+      board)))
 
 
-(defn choose!
-  "Modify board with choice"
-  [board yx-tuple val]
-  (if-let [updated-info (update-constraint! board yx-tuple val)]
-    (let [[board propagate-constraints] updated-info]
-      ;;When we have a valid board.
-      (reduce (fn [^"[Ljava.lang.Object;" board chosen-one-idx]
-                ;;One of these may cause a constraint violation
-                (when board
-                  ;;This may have been chosen as a result of a previous step
-                  (let [new-value (aget board (int chosen-one-idx))]
-                    (if (set? new-value)
-                      (choose! board
-                               (index->yx chosen-one-idx)
-                               (first new-value))
-                      board))))
-              board
-              propagate-constraints))
-    (when *error-on-invalid*
-      (throw (Exception. (format "Failed constraint:
-%s"
-                                 (board->str board true)))))))
+(defn eliminate!
+  "Eliminate d from values[s]; propagate when values or places <= 2.
+    Return values, except return False if a contradiction is detected."
+  [^"[Ljava.lang.Object;" board yx-tuple value]
+  (let [entry (aget board (yx->index yx-tuple))]
+    (if (not (contains? entry value))
+      board
+      (let [new-values (fast-set-disj entry value)
+            n-vals (count new-values)
+            _ (aset board (yx->index yx-tuple) new-values)
+            board (cond
+                    (= 0 n-vals)
+                    nil
+                    (= 1 n-vals)
+                    (let [set-val (fast-first new-values)]
+                      (when (every? #(eliminate! board (index->yx %) set-val)
+                                    (peers yx-tuple))
+                        board))
+                    :else
+                    board)]
+        (when board
+          (reduce (fn [board unit]
+                    (when board
+                      (let [dplaces (places-for-value board value unit)
+                            n-dplaces (fast-count dplaces)]
+                        (case n-dplaces
+                          0
+                          ;;constraint-violation
+                          nil
+                          1
+                          (assign! board (index->yx (fast-first dplaces)) value)
+                          board))))
+                  board
+                  (units yx-tuple)))))))
 
 
 (def grid1 "003020600900305001001806400008102900700000008006708200002609500800203009005010300")
@@ -232,7 +267,6 @@
 
 
 (defn parse-board
-  ""
   [str-board]
   (let [ascii-zero (Character/getNumericValue \0)
         meaningful-set (set "0123456789.")
@@ -244,11 +278,10 @@
                                                     (<= item-val 9))
                                            [item-idx item-val])))
                           (remove nil?))]
-    (with-bindings {#'*error-on-invalid* true}
-      (reduce (fn [new-board [item-idx item-val]]
-                (choose! new-board (index->yx item-idx) item-val))
-              (duplicate-board empty-board)
-              parsed-board))))
+    (reduce (fn [new-board [item-idx item-val]]
+              (assign! new-board (index->yx item-idx) item-val))
+            (duplicate-board empty-board)
+            parsed-board)))
 
 
 (defn solved?
@@ -265,9 +298,9 @@
            min-count -1]
       (if (< elem-idx n-elems)
         (let [entry (aget board elem-idx)
-              retval (if (and (set? entry)
+              retval (if (and (> (count entry) 1)
                               (or (= min-count -1)
-                                  (< (count entry) min-count)))
+                                  (and (< (count entry) min-count))))
                        [elem-idx entry]
                        retval)
               min-count (long (if retval (count (second retval)) min-count))]
@@ -277,23 +310,27 @@
 
 (defn search
   [board]
-  (let [[item-idx set-items :as min-elem] (minimal-len-set board)]
-    (if min-elem
+  (cond
+    (every? #(= 1 (count %)) board)
+    board
+    (nil? board)
+    board
+    :else
+    (let [[item-idx set-items :as min-elem] (minimal-len-set board)]
       (->> set-items
-           (map #(when-let [board (choose! (duplicate-board board)
+           (map #(when-let [board (assign! (duplicate-board board)
                                            (index->yx item-idx)
                                            %)]
                    (search board)))
            (remove nil?)
-           first)
-      ;;If there are no sets left then the board is solved.
-      board)))
+           first))))
 
 
 
 (defn solve
   [str-board]
-  (search (parse-board str-board)))
+  (let [board (parse-board str-board)]
+    (search board)))
 
 
 (def easy-group "sudoku-easy50.txt")
@@ -305,11 +342,11 @@
   [res-file]
   (let [num-solved (->> (-> (slurp (io/resource res-file))
                             (s/split #"\n"))
-                        (pmap (fn [item]
-                                (let [solved (solve item)]
-                                  (when-not solved
-                                    (throw (Exception. (str "Failed to solve " item))))
-                                  solved)))
+                        (map (fn [item]
+                               (let [solved (solve item)]
+                                 (when-not solved
+                                   (throw (Exception. (str "Failed to solve " item))))
+                                 solved)))
                         count)]
     (println "solved" num-solved "puzzles"))
   :ok)
