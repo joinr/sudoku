@@ -17,6 +17,12 @@ I represent the board as an y,x 2d indexed object array of one of three things:
 * `set` - potential values
 
 
+I used an [optimized set implementation](src/sudoku/longset.clj) where each set
+consists of a single long value and I check for which bits are high in order to
+decide inclusion to the set.  This works assuming you only want numbers 0-63 in your
+set which is plenty for sudoku.
+
+
 
 I also create an index tensor to pre-calculate the sets of affected indexes.
 

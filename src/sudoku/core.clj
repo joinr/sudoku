@@ -3,12 +3,15 @@
             [tech.v2.datatype :as dtype]
             [clojure.set :as c-set]
             [clojure.java.io :as io]
-            [clojure.string :as s])
+            [clojure.string :as s]
+            [sudoku.longset :refer [longset]])
+  (:import [clojure.lang IPersistentCollection])
   (:gen-class))
 
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* :warn-on-boxed)
+
 
 (defn board->str
   "Rendering the board.  Convert board to strings, keep
@@ -53,8 +56,7 @@
   (println (board->str board display-sets?)))
 
 
-
-(def digits (apply sorted-set (range 1 10)))
+(def digits (apply longset (range 1 10)))
 
 (def board-shape [9 9])
 
@@ -173,11 +175,14 @@
                 ;;The set of possible choices
                 (set? entry)
                 ;;disj means remove from set
-                (let [retval (disj entry val)]
-                  (if-not (empty? retval)
+                (let [retval (disj entry val)
+                      n-vals (count retval)]
+                  ;;empty forces a call to seq which is expensive compared to checking
+                  ;;if a long value is 0 (implementation of longset).
+                  (if-not (= 0 n-vals)
                     (do
                       (aset board target-idx retval)
-                      (when (= 1 (count retval))
+                      (when (= 1 n-vals)
                         (.add propagate-constraints target-idx))
                       true)
                     (do
