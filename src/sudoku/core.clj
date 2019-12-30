@@ -181,7 +181,7 @@
 ;;3x faster than memo-2 if we have a finite domain of keys and can
 ;;avoid hashing.
 (defn memo-2-row-col [f rows cols]
-  (let [arr (object-array (* rows cols))
+  (let [arr (object-array (* (long rows) (long cols)))
         _   (doseq [i (range rows)
                     j (range cols)]
               (aset arr (rc->index i j) (f i j)))]
@@ -234,7 +234,7 @@
                       {:units [row-indexes
                                col-indexes
                                unit-indexes]
-                       :affected-indexes (long-array all-indexes)
+                       :affected-indexes (long-array (sort all-indexes))
                        :peers (long-array (fast-set-disj all-indexes elem-idx))})) 9 9))
 
 (defn peers

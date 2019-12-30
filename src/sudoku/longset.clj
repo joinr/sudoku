@@ -1,11 +1,49 @@
 (ns sudoku.longset
   (:import [clojure.lang Counted IPersistentSet]))
 
+
+(set! *warn-on-reflection* true)
+(set! *unchecked-math* :warn-on-boxed)
+
 ;;A single long integer with bits set high represents a
 ;;set effectively assuming you never need more than 9 entries, only want
 ;;to have integers in it from 0-63, etc.  For sudoku, this is more
 ;;than enough.
-(declare longset-count longset-empty? longset-disj longset-contains? longset-cons longset)
+(declare longset-count longset-empty? longset-disj longset-contains? longset-cons longset
+         longset-iterator)
+
+
+(deftype LongsetIterator [^:unsynchronized-mutable ^long position
+                          ^long set]
+  tech.v2.datatype.LongIter
+  (hasNext [this]
+    (and (not= 0 set)
+         (< position 63)
+         (let [next-val (bit-shift-left 1 position)]
+           (and (> next-val 0)
+                (<= next-val set)))))
+  (nextLong [this]
+    (let [retval (.current this)]
+      (loop [pos (inc position)]
+        (let [cur-value (bit-shift-left 1 pos)]
+          (if (or (not= 0 (bit-and cur-value set))
+                  (< set 0)
+                  (> cur-value set))
+            (do (set! position pos)
+                (.current this))
+            (recur (inc pos)))))
+      retval))
+  (current [this]
+    (if (and (>= position 0)
+             (<= position 62))
+      position
+      -1)))
+
+
+(definline inline-longset-first
+  [set-val]
+  `(bit-shift-left 1 (dec (Long/lowestOneBit ~set-val))))
+
 
 (deftype Longset [^long set]
   IPersistentSet
@@ -21,17 +59,11 @@
        (= set (.set ^Longset other)))))
   (seq [this]
     (when-not (= 0 set)
-      (->> (range 0 63)
-           (filter #(.contains this %)))))
+      (iterator-seq (.iterator this))))
+  Iterable
+  (iterator [this] (longset-iterator this))
   clojure.lang.IFn
-  (invoke [this k] (longset-contains? this k))
-  clojure.lang.ISeq
-  (first [this] (when-let [ ^clojure.lang.ISeq s (seq this)]
-                  (.first s)))
-  (next  [this] (when-let [ ^clojure.lang.ISeq s (seq this)]
-                  (.next s)))
-  (more  [this] (when-let [ ^clojure.lang.ISeq s (seq this)]
-                  (.more s))))
+  (invoke [this k] (longset-contains? this k)))
 
 
 (defn longset?
@@ -39,34 +71,58 @@
   (instance? Longset item))
 
 
+(definline inline-longset-count
+  [set-val]
+  `(Long/bitCount ~set-val))
+
+
 (defn longset-count
   [^Longset longset]
-  (Long/bitCount (.set longset)))
+  (inline-longset-count (.set longset)))
 
+
+(definline inline-longset-empty?
+  [set-val]
+  `(= 0 (long ~set-val)))
 
 (defn longset-empty?
   [^Longset longset]
-  (= 0 (.set longset)))
+  (inline-longset-empty? (.set longset)))
+
+(defn longset-iterator
+  [^Longset longset]
+  (let [retval (LongsetIterator. -1 (.set longset))]
+    (.nextLong retval)
+    retval))
 
 
 (defn- check-longset-arg
   ^long [^long arg]
   (when-not (and (>= arg 0)
-                 (<= arg 63))
-    (throw (Exception. (format "Longset arg %s out of range [0-63]" arg))))
+                 (<= arg 62))
+    (throw (Exception. (format "Longset arg %s out of range [0-62]" arg))))
   arg)
 
 
+
+(definline inline-longset-disj
+  [set-val arg]
+  `(bit-and (long ~set-val)
+            (bit-not (bit-shift-left 1 (long ~arg)))))
+
 (defn longset-disj
   ^Longset [^Longset longset ^long arg]
-  (->Longset (bit-and (.set longset)
-                      (bit-not (bit-shift-left 1 arg)))))
+  (->Longset (inline-longset-disj (.set longset) arg)))
 
+
+(definline inline-longset-contains?
+  [set-val arg]
+  `(not= 0 (bit-and (long ~set-val)
+                    (bit-shift-left 1 (long ~arg)))))
 
 (defn longset-contains?
-  [^Longset longset arg]
-  (not= 0 (bit-and (.set longset)
-                   (bit-shift-left 1 (check-longset-arg arg)))))
+  [^Longset longset ^long arg]
+  (inline-longset-contains? (.set longset) (check-longset-arg arg)))
 
 
 (defn longset->set
@@ -78,16 +134,22 @@
                                       (bit-shift-left 1 (long %))))))))
 
 
-(defn longset-cons
+(definline inline-longset-conj
+  [set-val arg]
+  `(bit-or (long ~set-val)
+            (bit-shift-left 1 (long ~arg))))
+
+
+(defn longset-conj
   [^Longset set arg]
-  (->Longset
-   (bit-and (.set set)
-            (bit-shift-left 1 (check-longset-arg arg)))))
+  (->Longset (inline-longset-conj (.set set) (check-longset-arg arg))))
 
 
 (defn longset
   [& args]
-  (->Longset
-   (->> args
-        (map #(bit-shift-left 1 (check-longset-arg %)))
-        (apply bit-or))))
+  (if args
+    (->Longset
+     (->> args
+          (map #(bit-shift-left 1 (check-longset-arg %)))
+          (apply bit-or 0)))
+    (->Longset 0)))
