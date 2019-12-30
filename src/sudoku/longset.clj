@@ -42,7 +42,7 @@
 
 (definline inline-longset-first
   [set-val]
-  `(bit-shift-left 1 (dec (Long/lowestOneBit ~set-val))))
+  `(Long/numberOfTrailingZeros ~set-val))
 
 
 (deftype Longset [^long set]
