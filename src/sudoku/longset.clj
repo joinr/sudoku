@@ -1,7 +1,6 @@
 (ns sudoku.longset
   (:import [clojure.lang Counted IPersistentSet]))
 
-
 ;;A single long integer with bits set high represents a
 ;;set effectively assuming you never need more than 9 entries, only want
 ;;to have integers in it from 0-63, etc.  For sudoku, this is more
@@ -23,7 +22,16 @@
   (seq [this]
     (when-not (= 0 set)
       (->> (range 0 63)
-           (filter #(.contains this %))))))
+           (filter #(.contains this %)))))
+  clojure.lang.IFn
+  (invoke [this k] (longset-contains? this k))
+  clojure.lang.ISeq
+  (first [this] (when-let [ ^clojure.lang.ISeq s (seq this)]
+                  (.first s)))
+  (next  [this] (when-let [ ^clojure.lang.ISeq s (seq this)]
+                  (.next s)))
+  (more  [this] (when-let [ ^clojure.lang.ISeq s (seq this)]
+                  (.more s))))
 
 
 (defn longset?
