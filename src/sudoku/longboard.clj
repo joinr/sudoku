@@ -6,7 +6,8 @@
             [clojure.java.io :as io])
   (:import [java.util BitSet HashSet]
            [java.io Writer]
-           [sudoku.longset LongsetIterator]))
+           [sudoku.longset LongsetIterator])
+  (:gen-class))
 
 
 (set! *warn-on-reflection* true)
@@ -39,12 +40,12 @@
   (.write w (.toString board)))
 
 
-(def empty-board (SudokuBoard.
-                  (long-array
-                   (repeat core/n-board-elements
-                           (.set ^sudoku.longset.Longset core/digits)))
-                  (BitSet.)
-                  true))
+(def empty-board (delay (SudokuBoard.
+                         (long-array
+                          (repeat core/n-board-elements
+                                  (.set ^sudoku.longset.Longset core/digits)))
+                         (BitSet.)
+                         true)))
 
 
 (defn ->core-board
@@ -283,7 +284,7 @@
                                            [item-idx item-val])))
                           (remove nil?)
                           (vec))]
-    (assign! (duplicate-board empty-board)
+    (assign! (duplicate-board @empty-board)
              (java.util.ArrayList.  ^java.util.Collection parsed-board))))
 
 
@@ -351,3 +352,19 @@
                         count)]
     (println "solved" num-solved "puzzles"))
   :ok)
+
+
+(defn -main
+  [& args]
+  (println "warming up")
+  (solve-all core/easy-group)
+  (println "solving easy group")
+  (time (solve-all core/easy-group))
+  (println "solving top95 group")
+  (time (solve-all core/top95-group))
+  (println "solving hardest group")
+  (time (solve-all core/hardest-group))
+  (println "Solving really hard one...please wait")
+  (let [results (time (solve core/hard1))]
+    (display-board results))
+  (shutdown-agents))

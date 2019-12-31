@@ -6,6 +6,6 @@
   :dependencies [[org.clojure/clojure "1.10.1"]
                  [techascent/tech.datatype "4.66"]]
   :repl-options {:init-ns sudoku.core}
-  :main sudoku.core
-  :profiles {:uberjar {:aot [sudoku.core]
+  :main sudoku.longboard
+  :profiles {:uberjar {:aot [sudoku.longboard]
                        :uberjar-name "sudoku.jar"}})
