@@ -29,7 +29,7 @@ I precalculate all of the potential indexes that can be effected by any given mo
 similarly to the original impl.
 
 The intention was play with this problem from clojure potentially attempting a more
-numeric conversion.  Hopefully this code isn't to terse or hard.
+numeric conversion.  Hopefully this code isn't to terse or hard to read.
 
 ## Usage
 
