@@ -34,24 +34,24 @@ numeric conversion.  Hopefully this code isn't to terse or hard.
 ## Usage
 
 ```console
-chrisn@chrisn-lt2:~/dev/cnuernber/sudoku$ lein uberjar && java -jar target/sudoku.jar
-Compiling sudoku.core
-Compiling sudoku.core
+chrisn@chrisn-lt-2:~/dev/cnuernber/sudoku$ lein clean && lein uberjar && java -jar target/sudoku.jar
+Compiling sudoku.longboard
+Compiling sudoku.longboard
 Created /home/chrisn/dev/cnuernber/sudoku/target/sudoku-0.1.0-SNAPSHOT.jar
 Created /home/chrisn/dev/cnuernber/sudoku/target/sudoku.jar
 warming up
 solved 50 puzzles
 solving easy group
 solved 50 puzzles
-"Elapsed time: 140.796527 msecs"
+"Elapsed time: 23.025594 msecs"
 solving top95 group
 solved 95 puzzles
-"Elapsed time: 876.235254 msecs"
+"Elapsed time: 241.875119 msecs"
 solving hardest group
 solved 11 puzzles
-"Elapsed time: 41.039653 msecs"
+"Elapsed time: 4.895855 msecs"
 Solving really hard one...please wait
-"Elapsed time: 38865.973044 msecs"
+"Elapsed time: 8787.255352 msecs"
 -------------------------
 | 4 3 8 | 7 9 6 | 2 1 5 |
 | 6 5 9 | 1 3 2 | 4 7 8 |
