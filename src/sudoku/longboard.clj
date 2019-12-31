@@ -3,10 +3,13 @@
             [sudoku.longset :as longset]
             [tech.parallel.for :refer [serial-for]]
             [clojure.string :as s]
-            [clojure.java.io :as io])
+            [clojure.java.io :as io]
+            [sudoku.intset :as iset]
+            [structural.core :refer [with-slots]])
   (:import [java.util BitSet HashSet]
            [java.io Writer]
-           [sudoku.longset LongsetIterator])
+           [sudoku.longset LongsetIterator]
+           [clojure.lang Indexed])
   (:gen-class))
 
 
@@ -82,13 +85,11 @@
                         (aget board-values elem-pos)))
           [])
         :else
-        (let [^clojure.lang.Indexed yx #_[y x] (core/index->yx elem-pos)
-              y (.nth yx 0)
-              x (.nth yx 1)
-              ^longs affected-indexes (#_-> (core/get-affected-indexes y x) ;;faster to use function call.
-                                          :affected-indexes)
-              next-assignments (java.util.ArrayList.)
-              n-iters (alength affected-indexes)]
+        (with-slots [[y x] ^Indexed (core/index->yx elem-pos)
+                     ^longs affected-indexes ((core/get-affected-indexes y x) ;;faster to use function call.
+                                              :affected-indexes)
+                     next-assignments (java.util.ArrayList.)
+                     n-iters (alength affected-indexes)]
           (serial-for
            idx
            n-iters
@@ -116,7 +117,7 @@
   "Perform assignments an propagate the constraint that a set with one elements
   generates a new assignment.  Keep track of all indexes assigned to."
   [^SudokuBoard board ^long elem-pos ^long value]
-  (let [affected-indexes (HashSet.)
+  (let [affected-indexes (iset/bitset) #_(HashSet.)
         ^java.util.List next-assignments (do-assign! board elem-pos
                                                      value affected-indexes)]
     (when next-assignments
@@ -168,7 +169,7 @@
 
 (defn elem-indexes->unit-indexes
   ^java.util.Set [^Iterable assigned-indexes]
-  (let [retval (HashSet.)
+  (let [retval (iset/bitset) #_(HashSet.)
         ^"[Ljava.lang.Object;" elem-idx->unit-indexes elem-idx->unit-indexes
         iter (.iterator assigned-indexes)]
     (loop [continue? (.hasNext iter)]
@@ -243,7 +244,7 @@
 
 (defn assign!
   ([^SudokuBoard board ^java.util.List assignment-list]
-   (let [assigned-indexes (HashSet.)]
+   (let [assigned-indexes (iset/bitset) #_(HashSet.)]
      (loop [continue? (not (.isEmpty assignment-list))]
        (when (and continue? (boolean (valid? board)))
          (.clear assigned-indexes)
@@ -252,9 +253,9 @@
            (serial-for
             assign-idx
             n-assignments
-            (let [[elem-idx elem-val] (.get assignment-list assign-idx)]
+            (with-slots [[elem-idx elem-val] ^Indexed (.get assignment-list assign-idx)]
               (when-let [assign-result (assign-constraint! board elem-idx elem-val)]
-                (let [[board aff-indexes] assign-result]
+                (with-slots [[board aff-indexes] ^Indexed assign-result]
                   (.addAll assigned-indexes aff-indexes)))))
            (.clear assignment-list)
            ;;Add any place assignments found through checking all the units assocated
@@ -326,8 +327,8 @@
     (solved? board)
     board
     :else
-    (let [[item-idx set-items :as min-elem] (minimal-len-set board)
-          ^java.util.Iterator iter (longset/construct-iterator set-items)]
+    (with-slots [[item-idx set-items] ^Indexed (minimal-len-set board)
+                 ^java.util.Iterator iter (longset/construct-iterator set-items)]
       (loop [continue? (.hasNext iter)]
         (when continue?
           (let [board (-> (duplicate-board board)
