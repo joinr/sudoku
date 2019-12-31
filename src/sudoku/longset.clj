@@ -9,7 +9,10 @@
 ;;set effectively assuming you never need more than 9 entries, only want
 ;;to have integers in it from 0-63, etc.  For sudoku, this is more
 ;;than enough.
-(declare longset-count longset-empty? longset-disj longset-contains? longset-cons longset
+(declare longset-count longset-empty?
+         longset-disj
+         longset-contains?
+         longset-cons longset
          longset-iterator)
 
 
@@ -38,6 +41,12 @@
              (<= position 62))
       position
       -1)))
+
+
+(defn construct-iterator
+  ^LongsetIterator [^long set]
+  (doto (LongsetIterator. -1 set)
+    (.nextLong)))
 
 
 (definline inline-longset-first
@@ -89,11 +98,10 @@
   [^Longset longset]
   (inline-longset-empty? (.set longset)))
 
+
 (defn longset-iterator
-  [^Longset longset]
-  (let [retval (LongsetIterator. -1 (.set longset))]
-    (.nextLong retval)
-    retval))
+  ^LongsetIterator [^Longset longset]
+  (construct-iterator (.set longset)))
 
 
 (defn- check-longset-arg

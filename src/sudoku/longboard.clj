@@ -12,9 +12,11 @@
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* :warn-on-boxed)
 
+
 (defprotocol PSudokuValid
   (set-invalid! [board])
   (valid? [board]))
+
 
 (declare ->core-board)
 
@@ -24,7 +26,9 @@
                       ^:volatile-mutable validboard?]
 
   PSudokuValid
-  (set-invalid! [board] (set! validboard? false))
+  (set-invalid! [board]
+    (set! validboard? false)
+    board)
   (valid? [board] validboard?)
   Object
   (toString [board] (core/board->str (->core-board board) true)))
@@ -64,7 +68,8 @@
 
 
 (defn do-assign!
-  ^java.util.List [^SudokuBoard board ^long elem-pos ^long value]
+  ^java.util.List [^SudokuBoard board ^long elem-pos ^long value
+                   ^java.util.Set affected-indexes-set]
   ;;nil boards indicate invalid states
   (when (and board (valid? board))
     (let [^longs board-values (.board board)
@@ -87,17 +92,18 @@
            (let [target-idx (aget affected-indexes idx)]
              (if (= target-idx elem-pos)
                (do
+                 (.add affected-indexes-set target-idx)
                  (aset board-values elem-pos (longset/inline-longset-conj 0 value))
                  (.set solved-values elem-pos true))
                (let [pos-val (aget board-values target-idx)]
                  (when (longset/inline-longset-contains? pos-val value)
                    (let [new-val (longset/inline-longset-disj pos-val value)
                          new-bits (Long/bitCount new-val)]
+                     (.add affected-indexes-set target-idx)
                      (aset board-values target-idx new-val)
                      (case new-bits
                        1 (.add next-assignments target-idx)
-                       0 (do (println "constraint violation" elem-pos value new-val)
-                             (set-invalid! board))
+                       0 (set-invalid! board)
                        nil)))))))
           (when (valid? board)
             next-assignments))))))
@@ -107,10 +113,10 @@
   "Perform assignments an propagate the constraint that a set with one elements
   generates a new assignment.  Keep track of all indexes assigned to."
   [^SudokuBoard board ^long elem-pos ^long value]
-  (let [^java.util.List next-assignments (do-assign! board elem-pos value)
-        assigned-indexes (HashSet.)]
+  (let [affected-indexes (HashSet.)
+        ^java.util.List next-assignments (do-assign! board elem-pos
+                                                     value affected-indexes)]
     (when next-assignments
-      (.add assigned-indexes elem-pos)
       (let [^longs board-values (.board board)
             ^BitSet solved-values (.solved-pos board)]
         (loop [idx 0
@@ -120,28 +126,30 @@
             (let [assign-idx (.get next-assignments idx)
                   board (if-not (.get solved-values assign-idx)
                           (let [board-val (aget board-values assign-idx)
-                                new-assign (do-assign! board assign-idx
-                                                       (longset/inline-longset-first board-val))]
+                                new-assign (do-assign!
+                                            board assign-idx
+                                            (longset/inline-longset-first board-val)
+                                            affected-indexes)]
                             (when new-assign
-                              (.add assigned-indexes assign-idx)
                               (.addAll next-assignments new-assign)
                               board))
                           board)]
               (recur (inc idx) board))
             (when (and board (valid? board))
-              [board assigned-indexes])))))))
+              [board affected-indexes])))))))
 
 
 ;;The second half of the algorithm scans for 'place' assignments; situations where
 ;;the assignment can happen because there is only one potential place for an item.
 (def units
-  (into-array Object
-              (concat (map (comp long-array core/tensor->elem-seq core/row-indexes) (range 9))
-                      (map (comp long-array core/tensor->elem-seq core/column-indexes) (range 9))
-                      (map (comp long-array core/tensor->elem-seq)
-                           (for [y [0 3 6]
-                                 x [0 3 6]]
-                             (core/unit-indexes y x))))))
+  (into-array
+   Object
+   (concat (map (comp long-array core/tensor->elem-seq core/row-indexes) (range 9))
+           (map (comp long-array core/tensor->elem-seq core/column-indexes) (range 9))
+           (map (comp long-array core/tensor->elem-seq)
+                (for [y [0 3 6]
+                      x [0 3 6]]
+                  (core/unit-indexes y x))))))
 
 
 (def elem-idx->unit-indexes
@@ -170,28 +178,35 @@
         retval))))
 
 
+(defmacro iter-for
+  [val-name iterator & body]
+  `(let [^java.util.Iterator iter# ~iterator]
+     (loop [continue?# (.hasNext iter#)]
+       (when continue?#
+         (let [~val-name (.next iter#)]
+           ~@body
+           (recur (.hasNext iter#)))))))
+
+
 (defn scan-unit
   ^longs [^SudokuBoard board unit-index]
   (let [^longs unit (aget ^"[Ljava.lang.Object;" units unit-index)
         n-elems (alength unit)
         record (long-array 10 -1)
         ^longs board-values (.board board)]
-    (loop [idx 0]
-      (if (< idx n-elems)
-        (let [entry-idx (aget unit idx)
-              entry (aget board-values entry-idx)
-              entry-iter (doto (longset/LongsetIterator. -1 entry)
-                           (.nextLong))]
-          (loop [continue? (.hasNext entry-iter)]
-            (when continue?
-              (let [next-val (.next entry-iter)
-                    summary-val (aget record next-val)]
-                (if (= summary-val -1)
-                  (aset record next-val entry-idx)
-                  (aset record next-val Long/MAX_VALUE)))
-              (recur (.hasNext entry-iter))))
-          (recur (inc idx)))
-        record))))
+    (serial-for
+     idx
+     n-elems
+     (let [entry-idx (aget unit idx)
+           entry (aget board-values entry-idx)]
+       (iter-for
+        next-val
+        (longset/construct-iterator entry)
+        (let [summary-val (aget record next-val)]
+          (if (= summary-val -1)
+            (aset record next-val entry-idx)
+            (aset record next-val Long/MAX_VALUE))))))
+    record))
 
 
 (defn scan-for-place-assignments
@@ -200,18 +215,24 @@
         idx-iter (.iterator ^java.util.Set unit-indexes)
         next-assignments (java.util.ArrayList.)
         ^BitSet solved-values (.solved-pos board)]
-    (when-not (= (long core/n-board-elements) (.size solved-values)))
     (loop [continue? (.hasNext idx-iter)]
+      ;;There is a a decent chance to find an invalid board this way
       (when (and (valid? board) continue?)
-        (let [^longs unit-values (scan-unit board (.next idx-iter))]
-          (loop [uval-idx 1]
-            (when (< uval-idx 10)
-              (let [uval (aget unit-values uval-idx)]
-                (when (= -1 uval) (set-invalid! board))
-                (when (and (not= uval Long/MAX_VALUE)
-                           (not (.get solved-values uval)))
-                  (.add next-assignments [uval uval-idx]))
-                (recur (inc uval-idx)))))
+        (let [unit-idx (.next idx-iter)
+              ^longs unit-values (scan-unit board unit-idx)]
+          (serial-for
+           uval-idx
+           9
+           (let [uval-idx (inc uval-idx)
+                 uval (aget unit-values uval-idx)]
+             (cond
+               (= -1 uval)
+               (set-invalid! board)
+               (not= uval Long/MAX_VALUE)
+               (when (not (.get solved-values uval))
+                 (.add next-assignments [uval uval-idx]))
+               ;;no else clause intentional
+               )))
           (recur (boolean (and (valid? board) (.hasNext idx-iter)))))))
     (when (valid? board)
       next-assignments)))
@@ -225,19 +246,21 @@
          (.clear assigned-indexes)
          ;;Assign everything recording which indexes actually got assigned values.
          (let [n-assignments (.size assignment-list)]
-           (loop [assign-idx 0]
-             (when (< assign-idx n-assignments)
-               (let [[elem-idx elem-val] (.get assignment-list assign-idx)]
-                 (when-let [assign-result (assign-constraint! board elem-idx elem-val)]
-                   (let [[board indexes] assign-result]
-                     (.addAll assigned-indexes indexes))
-                   (recur (inc assign-idx))))))
+           (serial-for
+            assign-idx
+            n-assignments
+            (let [[elem-idx elem-val] (.get assignment-list assign-idx)]
+              (when-let [assign-result (assign-constraint! board elem-idx elem-val)]
+                (let [[board aff-indexes] assign-result]
+                  (.addAll assigned-indexes aff-indexes)))))
            (.clear assignment-list)
            ;;Add any place assignments found through checking all the units assocated
            ;;with the assigned indexes
            (when (valid? board)
-             (.addAll assignment-list
-                      (scan-for-place-assignments board assigned-indexes))))
+             (when-let [next-assignments (scan-for-place-assignments
+                                          board
+                                          assigned-indexes)]
+               (.addAll assignment-list next-assignments))))
          (recur (not (.isEmpty assignment-list)))))
      (when (valid? board)
        board)))
@@ -267,7 +290,7 @@
 (defn solved?
   [^SudokuBoard board]
   (let [^BitSet solved (.solved-pos board)]
-    (= (.size solved) (long core/n-board-elements))))
+    (= (.cardinality solved) (long core/n-board-elements))))
 
 
 (defn- minimal-len-set
@@ -285,7 +308,9 @@
                                   (and (< ecount min-count))))
                        [elem-idx entry]
                        retval)
-              min-count (long (if retval (Long/bitCount (long (second retval))) min-count))]
+              min-count (long (if retval
+                                (Long/bitCount (long (second retval)))
+                                min-count))]
           (recur (inc elem-idx) retval min-count))
         retval))))
 
@@ -293,24 +318,21 @@
 (defn search
   [^SudokuBoard board]
   (cond
-    (solved? board)
-    board
     (or (nil? board) (not (valid? board)))
     nil
+    (solved? board)
+    board
     :else
     (let [[item-idx set-items :as min-elem] (minimal-len-set board)
-          iter (doto (LongsetIterator. -1 set-items)
-                 (.nextLong))]
-      (loop [continue (.hasNext iter)]
-        (let [new-board
-              (when-let [board (assign! (duplicate-board board)
-                                        item-idx
-                                        (.nextLong iter))]
-                (search board))]
-          (if-not new-board
-            (recur (.hasNext iter))
-            new-board))))))
-
+          ^java.util.Iterator iter (longset/construct-iterator set-items)]
+      (loop [continue? (.hasNext iter)]
+        (when continue?
+          (let [board (-> (duplicate-board board)
+                          (assign! item-idx (.next iter))
+                          (search))]
+            (if (and board (valid? board))
+              board
+              (recur (.hasNext iter)))))))))
 
 (defn solve
   [board-str]

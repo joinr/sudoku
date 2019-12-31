@@ -281,6 +281,8 @@
     Return values, except return False if a contradiction is detected."
   [^"[Ljava.lang.Object;" board yx-tuple value]
   (let [other-values (fast-set-disj (aget board (yx->index yx-tuple)) value)]
+    (when-not (= 0 (count other-values))
+      (println "assign!" (yx->index yx-tuple) value (count other-values)))
     (when (fast-every? #(eliminate! board yx-tuple %) other-values)
       board)))
 
@@ -288,7 +290,7 @@
 ;;lol, counterintuively, this is faster for traversal over vectors than
 ;;reduce....
 (defn ireduce [f init v]
-  (let [^java.util.Iterator i  (.iterator ^clojure.lang.PersistentVector v)]
+  (let [^java.util.Iterator i  (.iterator ^Iterable v)]
     (loop [acc init]
       (if (.hasNext i)
         (let [res (f acc (.next i))]
@@ -310,7 +312,9 @@
             _      (aset board idx new-values)
             board (cond
                     (= 0 n-vals)
-                    nil
+                    (do
+                      (println "constraint violation" idx value new-values)
+                      nil)
                     (= 1 n-vals)
                     (let [set-val (fast-first new-values)]
                       (when (fast-every? #(eliminate! board (index->yx %) set-val)
@@ -326,9 +330,12 @@
                         (case n-dplaces
                           0
                           ;;constraint-violation
-                          nil
+                          (do
+                            (println "0pos constraint violation" idx value new-values)
+                            nil)
                           1
-                          (assign! board (index->yx (fast-first dplaces)) value)
+                          (do
+                            (assign! board (index->yx (fast-first dplaces)) value))
                           board))))
                   board
                   (units yx-tuple)))))))
@@ -395,10 +402,15 @@
     :else
     (let [[item-idx set-items :as min-elem] (minimal-len-set board)]
       (->> set-items
-           (map #(when-let [board (assign! (duplicate-board board)
-                                           (index->yx item-idx)
-                                           %)]
-                   (search board)))
+           (map #(do
+                   (println "assigning!" item-idx %)
+                   (when (and (= item-idx 3)
+                              (= % 3))
+                     (display-board board false))
+                   (when-let [board (assign! (duplicate-board board)
+                                             (index->yx item-idx)
+                                             %)]
+                     (search board))))
            (remove nil?)
            first))))
 
