@@ -82,8 +82,10 @@
                         (aget board-values elem-pos)))
           [])
         :else
-        (let [[y x] (core/index->yx elem-pos)
-              ^longs affected-indexes (-> (core/get-affected-indexes y x)
+        (let [^clojure.lang.Indexed yx #_[y x] (core/index->yx elem-pos)
+              y (.nth yx 0)
+              x (.nth yx 1)
+              ^longs affected-indexes (#_-> (core/get-affected-indexes y x) ;;faster to use function call.
                                           :affected-indexes)
               next-assignments (java.util.ArrayList.)
               n-iters (alength affected-indexes)]
@@ -93,7 +95,7 @@
            (let [target-idx (aget affected-indexes idx)]
              (if (= target-idx elem-pos)
                (do
-                 (.add affected-indexes-set target-idx)
+                 (.add affected-indexes-set target-idx) ;;possible opportunity to opt.
                  (aset board-values elem-pos (longset/inline-longset-conj 0 value))
                  (.set solved-values elem-pos true))
                (let [pos-val (aget board-values target-idx)]
@@ -297,7 +299,7 @@
 (defn- minimal-len-set
   [^SudokuBoard board]
   (let [^longs board-values (.board board)
-        n-elems (alength board-values)]
+        n-elems (alength board-values)] ;this is constant, but op is fast..
     (loop [elem-idx 0
            retval nil
            min-count -1]
@@ -310,7 +312,7 @@
                        [elem-idx entry]
                        retval)
               min-count (long (if retval
-                                (Long/bitCount (long (second retval)))
+                                (Long/bitCount (long (nth retval 1)))
                                 min-count))]
           (recur (inc elem-idx) retval min-count))
         retval))))
@@ -368,3 +370,17 @@
   (let [results (time (solve core/hard1))]
     (display-board results))
   (shutdown-agents))
+
+(defn run-them []
+  (println "warming up")
+  (solve-all core/easy-group)
+  (println "solving easy group")
+  (time (solve-all core/easy-group))
+  (println "solving top95 group")
+  (time (solve-all core/top95-group))
+  (println "solving hardest group")
+  (time (solve-all core/hardest-group))
+  (println "Solving really hard one...please wait")
+  (let [results (time (solve core/hard1))]
+    (display-board results))
+  )

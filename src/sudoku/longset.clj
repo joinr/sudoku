@@ -20,21 +20,21 @@
                           ^long set]
   tech.v2.datatype.LongIter
   (hasNext [this]
-    (and (not= 0 set)
+    (and (not (zero? set))
          (< position 63)
          (let [next-val (bit-shift-left 1 position)]
            (and (> next-val 0)
                 (<= next-val set)))))
   (nextLong [this]
     (let [retval (.current this)]
-      (loop [pos (inc position)]
+      (loop [pos (unchecked-inc position)]
         (let [cur-value (bit-shift-left 1 pos)]
-          (if (or (not= 0 (bit-and cur-value set))
+          (if (or (not (zero?  (bit-and cur-value set)))
                   (< set 0)
                   (> cur-value set))
             (do (set! position pos)
                 (.current this))
-            (recur (inc pos)))))
+            (recur (unchecked-inc pos)))))
       retval))
   (current [this]
     (if (and (>= position 0)

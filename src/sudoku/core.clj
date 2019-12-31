@@ -281,8 +281,9 @@
     Return values, except return False if a contradiction is detected."
   [^"[Ljava.lang.Object;" board yx-tuple value]
   (let [other-values (fast-set-disj (aget board (yx->index yx-tuple)) value)]
-    (when-not (= 0 (count other-values))
-      (println "assign!" (yx->index yx-tuple) value (count other-values)))
+    ;;dangling println.
+    #_(when-not (= 0 (count other-values))
+        (println "assign!" (yx->index yx-tuple) value (count other-values)))
     (when (fast-every? #(eliminate! board yx-tuple %) other-values)
       board)))
 
